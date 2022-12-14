@@ -1,0 +1,209 @@
+---
+title: "Gillnet_coord_exp"
+output: html_document
+date: "2022-09-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+### Clean Environment
+rm(list = ls())
+
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(raster)
+library(rgdal)
+library(rnaturalearth)
+library(geosphere)
+library(ggpubr)
+```
+
+
+```{r}
+### Read in data
+bathy_200fa <- raster ("original data/geographical_data/200mEEZ_BathyGrids/bd200fa_v2i")
+
+gillnet_coord_exp <- read_csv("processed data/gillnet_coord_exp.csv")
+
+usa <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf")
+
+mexico <- rnaturalearth::ne_countries(country="Mexico", returnclass = "sf")
+
+fishing_blocks <-  wcfish::blocks %>%
+  filter(block_state == 'California')
+```
+
+```{r}
+### Build up raster data
+bathy_200fa_WGS84 <- projectRaster(bathy_200fa, crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+
+bathy_200fa_WGS84_df <- as.data.frame(bathy_200fa_WGS84, xy = TRUE) %>%
+  filter(!is.na(bd200fa_v2i))
+
+### Build up experimental data
+
+gillnet_coord_exp_filter <- gillnet_coord_exp %>%
+  filter(!is.na(haul_depth_fa)) %>%
+  unite (depth_block_id, c(haul_depth_fa, block_id), sep = "-", remove = FALSE) %>%
+  filter(!duplicated(depth_block_id)) %>%
+  filter(!depth_block_id %in% c("35-652", "46-652", "40-664", "13-664", "14-664", "15-664", "17-664", "3-897", "5-897", "14-871", "15-871", "11-740", "10-740")) %>%
+  filter(!block_id %in% c("667", "888", "1104", "838", "889")) %>%
+  subset(select = -depth_block_id)
+
+```
+
+```{r}
+# Function to derive lat/long from block id and depth
+
+source("calc_xy.R")
+
+centroid_point <- matrix(ncol = 3, nrow = nrow(gillnet_coord_exp_filter))
+ 
+ for(i in 1:nrow(gillnet_coord_exp_filter)) {
+  calc_centroid = calc_xy(block = gillnet_coord_exp_filter$block_id[i],
+                          depth_fa = gillnet_coord_exp_filter$haul_depth_fa[i])
+
+  centroid_point[i,1] = gillnet_coord_exp_filter$set_id[i]
+  centroid_point[i,2] = calc_centroid[1]
+  centroid_point[i,3] = calc_centroid[2]
+
+ }
+ 
+ centroid_point <- as.data.frame(centroid_point) %>%
+   rename(set_id = V1, est_long = V2, est_lat = V3)
+ 
+ gillnet_real_coord <- gillnet_coord_exp_filter %>%
+   dplyr::select(set_id, haul_long_dd, haul_lat_dd, haul_depth_fa, block_id)
+ 
+centroid_est_real <- merge(centroid_point, gillnet_real_coord, by = "set_id") %>%
+  mutate(est_long = as.numeric(est_long), est_lat = as.numeric(est_lat)) %>%
+  mutate_if(is.numeric, round, digits = 6)
+
+### Derive distance between real location and estimated centroid
+centroid_est_real_dist <- centroid_est_real %>%
+  rowwise() %>%
+  mutate(distance = distHaversine(c(est_long, est_lat), c(haul_long_dd, haul_lat_dd))) %>%
+  mutate(distance_km = distance/1000) %>%
+  mutate_if(is.numeric, round, digits = 6)
+```
+
+
+
+```{r}
+### Making plot for pairwise true vs. estimated points
+
+par(mfrow = c(10, 10))
+
+i = 8
+
+for(i in 1:nrow(centroid_est_real)) {
+  
+  est_long_i <- centroid_est_real$est_long[i]
+  est_lat_i <- centroid_est_real$est_lat[i]
+  haul_long_dd_i <- centroid_est_real$haul_long_dd[i]
+  haul_lat_dd_i <- centroid_est_real$haul_lat_dd[i]
+  block <- centroid_est_real$block_id[i]
+  depth_fa <- centroid_est_real$haul_depth_fa[i]
+  
+  max_depth_fa <- depth_fa + 1
+  min_depth_fa <- depth_fa - 1
+  
+  block_do <- fishing_blocks %>%
+      filter(block_id == block)
+  
+  bathy_200fa_WGS84_cropped <- crop(x = bathy_200fa_WGS84, y = block_do)
+  
+  bathy_200fa_WGS84_cropped_df <- as.data.frame(bathy_200fa_WGS84_cropped, xy = TRUE) %>%
+    filter(!is.na(bd200fa_v2i))
+  
+  bathy_200fa_WGS84_depth_df <- bathy_200fa_WGS84_cropped_df %>%
+      filter(bd200fa_v2i >= -max_depth_fa & bd200fa_v2i <= -min_depth_fa)
+  
+  plot <- ggplot() +
+      geom_tile(data = bathy_200fa_WGS84_depth_df, aes(x = x, y = y, fill = bd200fa_v2i)) +
+      geom_point(data = centroid_est_real, aes(x = est_long_i, y = est_lat_i), size = 2, shape = 19, color = "red") +
+      geom_point(data = centroid_est_real, aes(x = haul_long_dd_i, y = haul_lat_dd_i), size = 2, shape = 19, color = "green") +
+        theme_bw()
+
+  print(plot)
+
+}
+
+  
+```
+
+
+```{r}
+
+### Derive distance between real location and estimated centroid
+centroid_est_real_dist <- centroid_est_real %>%
+  rowwise() %>%
+  mutate(distance = distHaversine(c(est_long, est_lat), c(haul_long_dd, haul_lat_dd))) %>%
+  mutate(distance_km = distance/1000) %>%
+  mutate_if(is.numeric, round, digits = 6)
+```
+
+
+```{r}
+
+block_centroid_matrix <- matrix(ncol = 3, nrow = nrow(gillnet_coord_exp_filter))
+
+for(i in 1:nrow(gillnet_coord_exp_filter)) {
+  
+  block = gillnet_coord_exp_filter$block_id[i]
+  
+  block_do <- fishing_blocks %>%
+    filter(block_id == block)
+  
+  block_centroid <- st_centroid(block_do) %>%
+    st_coordinates()
+  
+  block_centroid_matrix[i,1] = gillnet_coord_exp_filter$set_id[i]
+  block_centroid_matrix[i,2] = block_centroid[1]
+  block_centroid_matrix[i,3] = block_centroid[2]
+
+}
+
+block_centroid_df <- as.data.frame(block_centroid_matrix) %>%
+   rename(set_id = V1, block_long = V2, block_lat = V3)
+
+block_centroid_real <- merge(block_centroid_df, gillnet_real_coord, by = "set_id") %>%
+  mutate(block_long = as.numeric(block_long), block_lat = as.numeric(block_lat)) %>%
+  mutate_if(is.numeric, round, digits = 6)
+
+
+block_centroid_real_dist <- block_centroid_real %>%
+  rowwise() %>%
+  mutate(distance = distHaversine(c(block_long, block_lat), c(haul_long_dd, haul_lat_dd))) %>%
+  mutate(distance_km = distance/1000) %>%
+  mutate_if(is.numeric, round, digits = 6)
+
+```
+
+
+```{r}
+### Make boxplot to see the distribution of distance 
+
+block_centroid_real_dist_filter <- block_centroid_real_dist %>%
+  dplyr::select(set_id, distance_km)
+
+centroid_est_real_dist_filter <- centroid_est_real_dist %>%
+  dplyr::select(set_id, distance_km)
+
+boxplot_data <- merge(block_centroid_real_dist_filter, centroid_est_real_dist_filter, by = "set_id") %>%
+  rename(block_centroid_distance = distance_km.x, estimate_centroid_distance = distance_km.y) %>%
+  pivot_longer(!set_id, names_to = "category", values_to = "distance")
+
+
+ggplot()+
+  geom_boxplot(data = boxplot_data, aes(x = category, y = distance, fill = category)) +
+  scale_y_continuous(trans = "log10") +
+  labs(x = "Distance Category", y = "Distance (km)") +
+  theme_bw()
+  
+
+
+```
+

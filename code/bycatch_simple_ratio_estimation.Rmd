@@ -1,0 +1,150 @@
+---
+title: "bycatch_simple_ratio_estimation"
+output: html_document
+date: "2022-11-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+### clean working environment
+rm(list = ls())
+
+### Load in packages
+
+library(tidyverse)
+library(sf)
+
+```
+
+```{r}
+### Read in data
+
+SWFSC_trip_orig <- readRDS("original data/SWFSC_1990_2017_set_net_observer_trips.Rds") %>%
+  select(-set_num) %>%
+  separate("date_haul1", c("year", "month", "day"), sep = "-")
+
+SWFSC_observer_orig <- readRDS("original data/SWFSC_set_net_observer_data.Rds") %>%
+  select(c(-trip_id, -set_num))
+
+gillnet_orig <- readRDS("original data/gillnet_logbooks/processed/CDFW_2000_2020_gillnet_logbook_data.Rds")
+
+### Read in spatial data
+
+usa <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf")
+
+mexico <- rnaturalearth::ne_countries(country="Mexico", returnclass = "sf")
+
+wc_port <- wcfish::ports
+
+blocks <- wcfish::blocks
+
+```
+
+
+```{r}
+
+### use simple ratio to calculate bycatch for sensitive species in year 2010
+SWFSC_trip_2010 <- SWFSC_trip_orig %>%
+  filter(year == 2010) %>%
+  filter(!is.na(haul_lat_dd))
+
+### Pull block information from SWFSC_trip_2010 (geographic stratum)
+SWFSC_trip_2010_sp <- SWFSC_trip_2010 %>%
+  st_as_sf(coords = c("haul_long_dd", "haul_lat_dd"), crs = st_crs(blocks), remove = F) %>%
+  as_Spatial()
+
+blocks_sp <- blocks %>%
+  as_Spatial()
+
+### Intersect with blocks
+SWFSC_trip_2010_block_ids <- sp::over(SWFSC_trip_2010_sp, blocks_sp) %>%
+  pull(block_id)
+
+SWFSC_trip_2010_block <- SWFSC_trip_2010 %>%
+  mutate(block_id = SWFSC_trip_2010_block_ids) %>%
+  mutate(block_id = as.character(block_id)) %>%
+  mutate(geo_stratum = case_when(block_id == "708"~"Channel Islands",
+                                 block_id %in%c("653", "652", "683", "664", "666", "665")~"Ventura",
+                                 block_id %in%c("802", "801", "719", "718", "740", "756", "897","878")~"Southern California")) %>%
+  mutate(month = as.character(month)) %>%
+  mutate(temp_stratum = case_when(month %in% c("03","04","05")~"spring",
+                                  month %in% c("06","07","08")~"summer",
+                                  month %in% c("09","10","11")~"autumn",
+                                  month %in% c("12","01","02")~"winter")) %>%
+  mutate(temp_stratum = ifelse(geo_stratum == "Channel Islands", NA, temp_stratum)) %>%
+  unite(all_stratum, c(geo_stratum, temp_stratum), sep = "-", remove = TRUE)
+
+### merge with bycatch data
+
+SWFSC_2010_merge <- merge(SWFSC_observer_orig, SWFSC_trip_2010_block, by = "set_id") 
+
+
+```
+
+```{r}
+#### Estimate bycatch of California Sea Lion ####
+
+### Format observer data to get kill rate for each stratum (rs hat) ###
+
+# Count number of observed sealion bycatch in each stratum
+SWFSC_2010_sealion_observed <- SWFSC_2010_merge %>%
+  group_by(all_stratum) %>%
+  count(comm_name) %>%
+  filter(comm_name == "California sea lion")
+
+# Count number of observed fishing effort days (trip) in each stratum
+SWFSC_2010_trip_observed <- SWFSC_trip_2010_block %>%
+  group_by(all_stratum) %>%
+  filter(!duplicated(trip_id)) %>%
+  count(trip_id) %>%
+  summarize(total_trip_stratum_observed = sum(n))
+
+# merge observed sea lion bycatch with observed trips, and calculate kill rate in each stratum
+SWFSC_2010_sr_observed <- merge(SWFSC_2010_trip_observed, SWFSC_2010_sealion_observed, by = "all_stratum", all.x = TRUE) %>%
+  select(-comm_name) %>%
+  mutate(n = ifelse(is.na(n), 0, n)) %>%
+  mutate(kill_rate_observed = n/total_trip_stratum)
+
+### Format logbook data to get total fishing efforts in each stratum
+logbook_trip_2010_block <- gillnet_orig %>%
+  filter(net_type == "Set") %>%
+  filter(year == 2010) %>%
+  unite(trip_id, c(vessel_id, date), sep = "-", remove = FALSE) %>%
+  separate("date", c("year", "month", "day"), sep = "-") %>%
+  mutate(month = as.character(month)) %>%
+  mutate(temp_stratum = case_when(month %in% c("03","04","05")~"spring",
+                                  month %in% c("06","07","08")~"summer",
+                                  month %in% c("09","10","11")~"autumn",
+                                  month %in% c("12","01","02")~"winter")) %>%
+  select(-vessel_id, -month, -day) %>%
+  mutate(block_id = as.character(block_id)) %>%
+  filter(!is.na(block_id)) %>%
+  mutate(geo_stratum = case_when(block_id %in%c("688", "685", "708", "684", "710", "686", "690", "709")~"Channel Islands",
+                                 block_id %in%c("652", "665", "702", "664", "653", "683", "667", "703", "666", "654", "618")~"Ventura",
+                                 block_id %in%c("878", "719", "857", "739", "802", "801", "721", "860", "740", "718", "738", "897", "759", "889", "745", "863", "879", "753", "752")~"Southern California")) %>%
+  filter(!is.na(geo_stratum)) %>%
+  mutate(temp_stratum = ifelse(geo_stratum == "Channel Islands", NA, temp_stratum)) %>%
+  unite(all_stratum, c(geo_stratum, temp_stratum), sep = "-", remove = TRUE)
+
+# Get count of effort days(ds) in each stratum
+logbook_2010_trip_count <- logbook_trip_2010_block %>%
+  group_by(all_stratum) %>%
+  filter(!duplicated(trip_id)) %>%
+  count(trip_id) %>%
+  summarize(total_trip_stratum_logbook = sum(n))
+
+
+total_sealion_bycatch_estimate_2010 <- merge(SWFSC_2010_sr_observed, logbook_2010_trip_count, by = "all_stratum") %>%
+  mutate(bycatch_each_stratum = kill_rate_observed * total_trip_stratum_logbook)
+
+  
+
+
+
+```
+
+
+
+
+

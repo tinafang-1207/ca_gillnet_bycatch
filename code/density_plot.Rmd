@@ -1,0 +1,130 @@
+---
+title: "density_plot"
+output:
+  pdf_document: default
+  html_document: default
+date: "2022-12-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+### clean working environment
+
+rm(list = ls())
+
+### install packages
+library(tidyverse)
+library(rnaturalearth)
+library(sf)
+library(lubridate)
+
+
+### read in data
+SWFSC_trip_orig <- readRDS("original data/SWFSC_1990_2017_set_net_observer_trips.Rds") %>%
+  mutate(julian_day = yday(date_haul1)) %>%
+  separate("date_haul1", c("year", "month", "day"), sep = "-") %>%
+  filter(year >= 2000) %>%
+  filter(!is.na(haul_lat_dd))
+
+CDFW_bycatch_location <- read.csv("processed data/CDFW_bycatch_distance_from_shore.csv") %>%
+  mutate(julian_day = yday(date)) %>%
+  separate("date", c("year", "month", "day"), sep = "-")
+
+usa <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf")
+
+usa_ca <- usa %>% filter(name == "California")
+
+
+
+```
+
+```{r}
+# Calculate distance from shore for data after 2000s
+
+# set up projection to utm11
+
+utm11 <- "+proj=utm +zone=11 +datum=NAD83"
+
+# Convert fishing location data to sp
+SWFSC_xy_sp <- SWFSC_trip_orig %>%
+  #Convert to sf
+  st_as_sf(coords = c("haul_long_dd", "haul_lat_dd"), crs = st_crs(usa_ca), remove = F) %>%
+  #Convert to SP
+  as_Spatial()
+
+SWFSC_xy_sp_utm <- SWFSC_xy_sp %>%
+  sp::spTransform(utm11)
+
+# Convert usa_ca to sp
+usa_ca_sp <- usa_ca %>%
+  st_transform(crs = utm11) %>%
+  as_Spatial()
+
+# Calculate distance of each point to ca shapefile
+dist_mat <- rgeos::gDistance(SWFSC_xy_sp_utm, usa_ca_sp, byid = T)
+
+#format distance matrix
+dist_df <- dist_mat %>%
+  as.data.frame() %>%
+  gather(key = "row_id", value = "dist_m", 1:ncol(.)) %>%
+  mutate(set_id = SWFSC_xy_sp_utm$set_id) %>%
+  select(-row_id) %>%
+  select(set_id, dist_m)
+
+# Add distance matrix back to dataframe
+SWFSC_dist_from_shore <- merge(SWFSC_trip_orig, dist_df, by = "set_id") %>%
+  mutate(dist_km = dist_m/1000)
+
+```
+
+```{r}
+CDFW_density_join <- CDFW_bycatch_location %>%
+  select(year, lat_dd, long_dd, net_depth, mesh_size1_in, dist_km, julian_day) %>%
+  rename(haul_depth = net_depth, mesh_size = mesh_size1_in)
+
+SWFSC_density_join <- SWFSC_dist_from_shore %>%
+  select(year, haul_lat_dd, haul_long_dd, haul_depth_fa, net_mesh_size_in, dist_km, julian_day) %>%
+  rename(lat_dd = haul_lat_dd, long_dd = haul_long_dd, haul_depth = haul_depth_fa, mesh_size = net_mesh_size_in)
+
+density_plot_total <- rbind(CDFW_density_join, SWFSC_density_join) %>%
+  mutate(group = ifelse(year >= 2000, "2000s", "1980s"))
+```
+
+
+```{r}
+### distance from shore
+
+ggplot(density_plot_total %>% filter(dist_km <= 20), aes(dist_km, fill = group)) +
+  geom_density(alpha = 0.4)
+```
+
+```{r}
+### latitude location
+
+ggplot(density_plot_total, aes(lat_dd, fill = group)) +
+  geom_density(alpha = 0.4)
+```
+```{r}
+
+### haul_depth
+### Unsure about the unit of depth for 1980s data
+### 2000s data depth in fa
+
+ggplot(density_plot_total %>% filter(haul_depth <= 50), aes(haul_depth, fill = group)) +
+  geom_density(alpha = 0.4)
+```
+
+```{r}
+### mesh size
+ggplot(density_plot_total %>% filter(mesh_size <= 10), aes(mesh_size, fill = group)) +
+  geom_density(alpha = 0.4)
+```
+
+```{r}
+### Julian day
+
+ggplot(density_plot_total, aes(julian_day, fill = group)) +
+  geom_density(alpha = 0.4)
+```
+

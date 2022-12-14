@@ -1,0 +1,125 @@
+---
+title: "CA_MPA"
+author: "Yutian Fang"
+date: '2022-07-19'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(raster)
+library(rgdal)
+library(rnaturalearth)
+
+```
+
+```{r}
+# Read in data
+
+bathy_200fa <- raster ("original data/geographical_data/200mEEZ_BathyGrids/bd200fa_v2i")
+
+gillnet_estimate <- read_csv("processed data/gillnet_coord_estimate.csv")
+
+fishing_blocks <-  wcfish::blocks %>%
+  filter(block_state == 'California')
+
+GDALinfo("original data/geographical_data/200mEEZ_BathyGrids/bd200fa_v2i")
+
+bathy_200fa_df <- as.data.frame(bathy_200fa, xy = TRUE)
+
+
+# project the raster into WGS84 
+
+# Overlay the CA shapefile over the raster
+
+USA <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf") 
+
+bathy_200fa_WGS84 <- projectRaster(bathy_200fa, crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+
+bathy_200fa_WGS84_df <- as.data.frame(bathy_200fa_WGS84, xy = TRUE) %>%
+  filter(!is.na(bd200fa_v2i))
+
+bathy_200fa_WGS84_sample_df <- bathy_200fa_WGS84_df %>% 
+  sample_frac(.01)
+
+st_crs(USA)
+
+ggplot() +
+  geom_tile(bathy_200fa_WGS84_df, mapping = aes(x = x, y = y, fill = bd200fa_v2i)) +
+  geom_sf(data = USA, fill = "grey80", color = "white") +
+  coord_sf(xlim = c(-124, -116), ylim = c(32, 42)) +
+  scale_fill_gradientn(name = "depth (fa)", colors = RColorBrewer::brewer.pal(9, "Blues") %>% rev()) +
+  theme_bw()
+
+RColorBrewer::display.brewer.all()
+
+#also check cmocean for color brewer
+```
+
+
+```{r}
+
+# create a seperate dataset for unique combinations of block id and depth
+for(block,)
+  
+block <- 510; depth_fa <- 30
+
+calc_xy <- function(block, depth_fa, plot=T){
+  
+# Derive min/max depth
+max_depth_fa <- depth_fa + 1
+min_depth_fa <- depth_fa - 1
+
+block_do <- fishing_blocks %>%
+  filter(block_id == block)
+
+bathy_200fa_WGS84 <- crop(bathy_200fa_WGS84, block_do)
+
+bathy_200fa_WGS84_df <- as.data.frame(bathy_200fa_WGS84, xy = TRUE) %>%
+  filter(!is.na(bd200fa_v2i))
+
+bathy_200fa_WGS84_depth_df <- bathy_200fa_WGS84_df %>%
+  filter(bd200fa_v2i >= -max_depth_fa & bd200fa_v2i <= -min_depth_fa)
+
+bathy_200fa_WGS84_30fa <- rasterFromXYZ(bathy_200fa_WGS84_depth_df)
+
+xyFromCell(bathy_200fa_WGS84_30fa, 1:ncell(bathy_200fa_WGS84_30fa))
+
+centroid <- colMeans(xyFromCell(bathy_200fa_WGS84_30fa, 1:ncell(bathy_200fa_WGS84_30fa)))
+
+centroid_point <- data.frame(longitude = -122.2106, latitude = 36.9728)
+
+if(plot==T)
+  ggplot() +
+  geom_tile(data = bathy_200fa_WGS84_depth_df, aes(x = x, y = y, fill = bd200fa_v2i)) +
+  geom_point(data = centroid_point, aes(x = longitude, y = latitude), size = 2, shape = 19, fill = "red") +
+  scale_fill_gradientn(name = "depth (fa)", colors = RColorBrewer::brewer.pal(9, "Blues") %>% rev()) +
+  theme_bw()
+}
+  
+  
+  
+}
+
+
+
+```
+
+```{r}
+
+xyFromCell(bathy_200fa_WGS84_510_30fa, 1:ncell(bathy_200fa_WGS84_510_30fa))
+
+centroid <- colMeans(xyFromCell(bathy_200fa_WGS84_510_30fa, 1:ncell(bathy_200fa_WGS84_510_30fa)))
+
+centroid_point <- data.frame(longitude = -122.2106, latitude = 36.9728)
+  
+
+```
+
+```{r}
+
+```
+

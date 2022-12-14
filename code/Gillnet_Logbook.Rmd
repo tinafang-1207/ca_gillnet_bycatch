@@ -1,0 +1,120 @@
+---
+title: "Gillnet_logbook"
+author: "Yutian Fang"
+date: '2022-07-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+### Clean Environment
+rm(list = ls())
+
+### Load packages
+library(tidyverse)
+
+
+```
+
+```{r}
+# Read in data
+
+SWFSC_trip_orig <- readRDS ("original data/SWFSC_1990_2017_set_net_observer_trips.Rds")
+
+gillnet_logbook_orig <- readRDS("original data/gillnet_logbooks/processed/CDFW_2000_2020_gillnet_logbook_data.Rds")
+
+logbook_corrected <- read_csv("original data/logbook_vessel_id_corrected.csv")
+
+```
+
+
+```{r}
+
+
+# Format the corrected vessel_id
+gillnet_logbook_corrected <- left_join (gillnet_logbook_orig, logbook_corrected, by = "vessel_name") %>%
+  select(set_id, vessel_name, vessel_id, vessel_id_corrected, corrected_source, everything()) %>%
+  mutate(vessel_id_corrected = coalesce(vessel_id, vessel_id_corrected)) %>%
+  mutate(corrected_source = ifelse(!is.na(vessel_id), "L", corrected_source))
+
+
+# Create function to calculate mode
+Mode <- function(x) {
+   if ( length(x) <= 2 ) return(x[1])
+   if ( anyNA(x) ) x = x[!is.na(x)]
+   ux <- unique(x)
+   ux[which.max(tabulate(match(x, ux)))]
+}
+
+
+### 
+
+### get logbook block mode from logbook corrected (create vessel_date_month for join)
+gillnet_block_mode_before_join <- gillnet_logbook_corrected %>%
+  select(vessel_id_corrected, date, block_id) %>%
+  separate("date", c("year", "month", "day"), sep = "-") %>%
+  group_by(vessel_id_corrected, year, month) %>%
+  mutate (block_id_mode = Mode(block_id)) %>%
+  unite(vessel_date_month, c(vessel_id_corrected, year, month), sep = "-", remove = TRUE) %>%
+  select(vessel_date_month, block_id_mode)
+
+### get logbook block from logbook corrected (create vessel_date for join)
+gillnet_block_before_join <- gillnet_logbook_corrected %>%
+  select(vessel_id_corrected, date, block_id) %>%
+  unite(vessel_date, c(vessel_id_corrected, date), sep = "-", remove = TRUE)
+
+### get SWFSC trip block from SWFSC trip orig to join with logbook block mode
+SWFSC_trip_block_before_join <- SWFSC_trip_orig %>% 
+  separate("date_haul1", c("year", "month", "day"), sep = "-") %>%
+  unite(vessel_date_month, c(vessel_plate, year, month), sep = "-", remove = TRUE)
+
+### join block_mode column to SWFSC_trip_block
+gillnet_block_mode_after_join <- left_join(SWFSC_trip_block_before_join, gillnet_block_mode_before_join, by = "vessel_date_month") %>%
+  filter(!duplicated(set_id)) %>%
+  unite(vessel_date, c(vessel_date_month, day), sep = "-", remove = TRUE)
+
+### join block_id column to block_mode_after_join
+gillnet_block_after_join <- left_join(gillnet_block_mode_after_join, gillnet_block_before_join, by = "vessel_date") %>%
+  filter(!duplicated(set_id)) %>%
+  separate("vessel_date", c("vessel_plate", "year", "month", "day"), sep = "-") %>%
+  filter(year >= "2000") %>%
+  mutate(block_id = ifelse(is.na(block_id), replace_na(block_id_mode), block_id))
+
+```
+
+```{r}
+### Export the data that need to be estimated with lat and long
+
+gillnet_coord_estimate <- gillnet_block_after_join %>%
+  select(-block_id_mode) %>%
+  filter(!is.na(block_id)) %>%
+  filter(is.na(haul_lat_dd))
+
+write.table(gillnet_coord_estimate, file = "gillnet_coord_estimate.csv", row.names = F, sep = ",")
+```
+
+```{r}
+### Export the data used in experiment
+
+gillnet_coord_exp <- gillnet_block_after_join %>%
+  select(-block_id_mode) %>%
+  filter(!is.na(haul_lat_dd))
+
+write.table(gillnet_coord_exp, file = "processed data/gillnet_coord_exp.csv", row.names = F, sep = ",")
+```
+
+```{r}
+### Export the data with block_id
+
+gillnet_coord_all <- gillnet_block_after_join %>%
+  select(-block_id_mode) %>%
+  filter(!is.na(block_id))
+
+write.table(gillnet_coord_all, file = "processed data/gillnet_coord_all.csv", row.names = F, sep = ",")
+```
+
+
+
+
+
