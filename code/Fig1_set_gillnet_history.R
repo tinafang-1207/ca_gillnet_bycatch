@@ -14,7 +14,7 @@ plotdir <- "figures"
 gisdatadir <- "data/gis_data"
 
 # Read data
-data_orig <- readRDS("/Users/cfree/Dropbox/Chris/UCSB/consulting/halibut_bycatch/data/gillnet_logbooks/processed/CDFW_2000_2020_gillnet_logbook_data.Rds")
+data_orig <- readRDS("/Users/cfree/Dropbox/Chris/UCSB/projects/california/cdfw_data/data/confidential/gillnet_logbooks/processed/CDFW_2000_2020_gillnet_logbook_data.Rds")
 
 # World
 usa <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf")
@@ -29,6 +29,9 @@ state_waters <- readRDS(file.path(gisdatadir, "CA_state_waters_polyline.Rds"))
 
 # Format data
 ################################################################################
+
+# Inspect
+freeR::complete(data_orig) # sets are actually sets pre-2017ish but are logooks after, vessel id is good
 
 # Build annual time series
 data <- data_orig %>%
