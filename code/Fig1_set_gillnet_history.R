@@ -87,6 +87,7 @@ g2 <- ggplot(data, aes(x=year, y=nvessels)) +
   geom_line() +
   # Labels
   labs(x="Year", y="Number of vessels", tag="B") +
+  lims(y=c(0, NA)) +
   # Theme
   theme_bw() + base_theme +
   theme(axis.title.x=element_blank())
