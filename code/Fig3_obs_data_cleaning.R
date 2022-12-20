@@ -1,11 +1,25 @@
-### clean working environment
+
+#################################################################################################################
+### product: merged table of 1980s and 2000s obs and trip data that used to make figure 3 (observer data only, no prediction)
+#################################################################################################################
+
+#################################
+### clean working environment ###
+#################################
+
 rm(list = ls())
 
-### Load in packages
+
+########################
+### Load in packages ###
+########################
+
 library(tidyverse)
 library(sf)
 
+####################
 ### read in data ###
+####################
 
 # observer data
 obs_2000 <- readRDS("data/confidential/original/SWFSC_set_net_observer_data.Rds")
@@ -27,10 +41,13 @@ bathy_200fa <- raster::raster("data/gis_data/200mEEZ_BathyGrids/bd200fa_v2i")
 
 bathy_200fa_WGS84 <- raster::projectRaster(bathy_200fa, crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 
+######################
 ### Data Wrangling ###
+######################
 
-# Format and combine trip data from 1980-2000
+# Format and combine trip data from 1980s and 2000s
 
+# select variables and format soak hours in 1980s data
 trip_1980_soak_hours <- trip_1980 %>%
   #select columns to combine and rename them
   select(date, vessel_id, set_id, port_depart, port_landing, lat_dd, long_dd, duration, net_type, net_length_fa, mesh_size1_in) %>%
@@ -49,7 +66,8 @@ trip_1980_soak_hours <- trip_1980 %>%
   mutate_if(is.numeric, round, digits = 4) %>%
   rename(soak_hr = hours)
 
-trip_1980_pre_join_xy <- trip_1980_pre_join %>%
+# correct depth in 1980s data
+trip_1980_pre_join_xy <- trip_1980_soak_hours %>%
   select(haul_long_dd, haul_lat_dd)
 
 trip_1980_depth_mat <- raster::extract(bathy_200fa_WGS84, trip_1980_pre_join_xy)
@@ -57,14 +75,14 @@ trip_1980_depth_mat <- raster::extract(bathy_200fa_WGS84, trip_1980_pre_join_xy)
 trip_1980_depth_df <- trip_1980_depth_mat %>%
   as.data.frame() %>%
   gather(key = "row_id", value = "haul_depth_fa", 1:ncol(.)) %>%
-  mutate(row_id = trip_1980_pre_join$set_id) %>%
+  mutate(row_id = trip_1980_soak_hours$set_id) %>%
   rename(set_id = row_id)
 
 trip_1980_pre_join <- merge(trip_1980_soak_hours, trip_1980_depth_df, by = "set_id") %>%
   mutate(haul_depth_fa = abs(haul_depth_fa)) %>%
   mutate(haul_depth_fa = round(haul_depth_fa, digits = 0))
 
-
+# select and rename variables in 2000s data
 trip_2000_pre_join <- trip_2000 %>%
   #select columns to combine and rename them
   select(date_haul1, vessel_plate, set_id, port_depart, port_return, haul_lat_dd, haul_long_dd, soak_hr, haul_depth_fa, net_type, net_mesh_size_in, net_mesh_panel_length_fathoms) %>%
@@ -74,8 +92,9 @@ trip_2000_pre_join <- trip_2000 %>%
 trip_merge <- rbind(trip_1980_pre_join, trip_2000_pre_join)
 
 
-# Format and combine observer data from 1980-2000
+# Format and combine observer data of 1980s and 2000s
 
+# select and format observer data in 1980s
 obs_1980_pre_join <- obs_1980 %>%
   mutate(n_retained = n_kept + n_kept_sublegal + n_sold) %>%
   # add column of discarded_unknown in consistency with observer data after 2000s
@@ -85,6 +104,7 @@ obs_1980_pre_join <- obs_1980 %>%
   mutate(data_source = "CDFW 1980s") %>%
   select(-date, -vessel_id, -spp_code_chr, -n_kept, -n_kept_sublegal, -n_sold, -m_file_link, -s_file_link)
 
+# select and format observer data in 2000s
 obs_2000_pre_join <- obs_2000 %>%
   # format the capture/kept data of sensitive species
   mutate(n_caught = ifelse(!is.na(condition_code), 1, n_caught)) %>%
@@ -98,9 +118,7 @@ obs_2000_pre_join <- obs_2000 %>%
   mutate(n_discarded_total = n_discarded_alive + n_discarded_dead + n_discarded_unknown) %>%
   select(-trip_id, -spp_code, -comm_name_orig, -sci_name, -mammal_damage_yn,-n_damaged_mammals, -condition_code, -condition, -sex, -tag_yn)
 
-# read in data with species category and add to merged observer data of 1980s and 2000s
-
-species_key <- read.csv("data/species_key.csv")
+# add species category to merged observer data of 1980s and 2000s
 
 obs_merge <- rbind(obs_1980_pre_join, obs_2000_pre_join)%>%
   merge(species_key, by = "comm_name") %>%
@@ -112,9 +130,13 @@ total_merge <- merge(obs_merge, trip_merge, by = "set_id") %>%
   # only keep those with exact fishing locations in lat and long
   filter(!is.na(haul_lat_dd))
 
+#################################################################################################
+# variables want to have on x-axis: latitude, Julian day of year, distance from shore and depth #
+#################################################################################################
 
-
-# Format spatial data- calculate distance to shore
+###################################
+### calculate distance to shore ###
+##################################
 
 # set up projection to utm11
 utm11 <- "+proj=utm +zone=11 +datum=NAD83"
@@ -150,4 +172,14 @@ dist_df <- dist_mat %>%
 total_merge_dist <- left_join(total_merge, dist_df, by = "set_id") %>%
   mutate(dist_km = dist_m/1000)
 
-# Format spatial data - correct 
+######################
+### add Julian day ###
+######################
+
+total_merge_final <- total_merge_dist %>%
+  mutate(julian_day = lubridate::yday(date)) 
+
+##############################
+### Export the final table ###
+##############################
+write.table(total_merge_final, file = "data/confidential/processed/fig3_merge_obs_and_trip_data.csv", row.names = F, sep = ",")
