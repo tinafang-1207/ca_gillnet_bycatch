@@ -130,6 +130,9 @@ total_merge <- merge(obs_merge, trip_merge, by = "set_id") %>%
   # only keep those with exact fishing locations in lat and long
   filter(!is.na(haul_lat_dd))
 
+# Merge observer data with trip data from 1980s-2000s (keep all data)
+total_merge_all <- merge(obs_merge, trip_merge, by = "set_id")
+
 #################################################################################################
 # variables want to have on x-axis: latitude, Julian day of year, distance from shore and depth #
 #################################################################################################
@@ -177,9 +180,14 @@ total_merge_dist <- left_join(total_merge, dist_df, by = "set_id") %>%
 ######################
 
 total_merge_final <- total_merge_dist %>%
-  mutate(julian_day = lubridate::yday(date)) 
+  mutate(julian_day = lubridate::yday(date))
+
+total_merge_all_final <- total_merge_all %>%
+  mutate(julian_day = lubridate::yday(date))
 
 ##############################
 ### Export the final table ###
 ##############################
 write.table(total_merge_final, file = "data/confidential/processed/fig3_merge_obs_and_trip_data.csv", row.names = F, sep = ",")
+
+write.table(total_merge_all_final, file = "data/confidential/processed/fig3_merge_obs_and_trip_data_all.csv", row.names = F, sep = ",")
