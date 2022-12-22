@@ -21,7 +21,7 @@ library(lubridate)
 
 
 ### read in data
-SWFSC_trip_orig <- readRDS("original data/SWFSC_1990_2017_set_net_observer_trips.Rds") %>%
+SWFSC_trip_orig <- readRDS("data/confidential/original/SWFSC_1990_2017_set_net_observer_trips.Rds") %>%
   mutate(julian_day = yday(date_haul1)) %>%
   separate("date_haul1", c("year", "month", "day"), sep = "-") %>%
   filter(year >= 2000) %>%
