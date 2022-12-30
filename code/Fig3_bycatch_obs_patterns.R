@@ -247,3 +247,88 @@ g4_lat <- ggplot(data = mammal_bycatch_lat, aes(x=lat_catg, y = proportion_seal,
   lims(y = c(0, 0.1), x = c(32,35))+
   theme_bw() +base_theme
 g4_lat
+
+
+##############################################################
+### Panel A (4) - Julian Day and BPUE of sensitive species ###
+##############################################################
+
+number_sets_jd <- total_merge %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_sets = n_distinct(set_id)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = FALSE)
+
+number_effort_jd <- total_merge %>%
+  filter(!is.na(net_length_fa)) %>%
+  filter(!is.na(soak_hr)) %>%
+  select(set_id, net_length_fa, soak_hr, data_source, julian_day) %>%
+  # turn units from hrs*fa into day*miles
+  mutate(effort = soak_hr*net_length_fa * (1/(880*24))) %>%
+  filter(!duplicated(set_id)) %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_efforts = sum(effort)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = TRUE)
+
+number_sealion_jd <- total_merge %>%
+  filter(comm_name == "California sea lion") %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_sealion = sum(n_discarded_total), set_sealion = n_distinct(set_id)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = TRUE)
+
+number_seal_jd <- total_merge %>%
+  filter(comm_name == "Harbor seal") %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_seal = sum(n_discarded_total), set_seal = n_distinct(set_id)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = TRUE)
+
+mammal_bycatch_jd <- merge(number_sets_jd, number_effort_jd, by = "unique_id", all.x = TRUE) %>%
+  merge(number_sealion_jd, by = "unique_id", all.x = TRUE) %>%
+  merge(number_seal_jd, by = "unique_id", all.x = TRUE) %>%
+  mutate(bpue_sealion = number_sealion/number_efforts) %>%
+  mutate(bpue_seal = number_seal/number_efforts) %>%
+  mutate(proportion_sealion = set_sealion/number_sets) %>%
+  mutate(proportion_seal = set_seal/number_sets) %>%
+  mutate_all(~replace(., is.na(.), 0))
+
+base_theme <- theme(axis.text=element_text(size=6),
+                    axis.text.y = element_text(angle = 90, hjust = 0.5),
+                    axis.title=element_text(size=7),
+                    legend.text=element_text(size=6),
+                    legend.title=element_text(size=7),
+                    plot.tag =element_text(size=8),
+                    plot.title=element_blank(),
+                    # Gridlines
+                    panel.grid.major = element_blank(),
+                    panel.grid.minor = element_blank(),
+                    panel.background = element_blank(),
+                    axis.line = element_line(colour = "black"))
+
+
+g1_jd <- ggplot(data = mammal_bycatch_jd, aes(x=julian_day, y = bpue_sealion, fill = data_source, size = number_sets)) +
+  geom_point(pch = 21) +
+  lims(y = c(0, 10)) +
+  theme_bw() + base_theme
+
+g1_jd
+
+g2_jd <- ggplot(data = mammal_bycatch_jd, aes(x= julian_day, y = bpue_seal, fill = data_source, size = number_sets)) +
+  geom_point(pch = 21) +
+  lims(y = c(0, 2)) +
+  theme_bw() + base_theme
+
+g2_jd
+
+g3_jd <- ggplot(data = mammal_bycatch_jd, aes(x=julian_day, y = proportion_sealion, fill = data_source, size = number_sets)) +
+  geom_point(pch = 21) +
+  #lims(y = c(0, 0.25), x = c(32, 35)) +
+  theme_bw() +base_theme
+
+g3_jd
+
+g4_jd <- ggplot(data = mammal_bycatch_jd, aes(x=julian_day, y = proportion_seal, fill = data_source, size = number_sets)) +
+  geom_point(pch = 21) +
+  #lims(y = c(0, 0.25), x = c(32, 35)) +
+  theme_bw() +base_theme
+
+g4_jd
+
