@@ -450,8 +450,8 @@ g_cpue_depth
 ############################################
 
 total_merge_latitude_cpue <- total_merge %>%
-  mutate(lat_catg = cut(haul_lat_dd, breaks = seq(32.4, 35.7,0.2), 
-                        label = seq(32.4, 35.5, 0.2), right = F) %>% as.character() %>% as.numeric())
+  mutate(lat_catg = cut(haul_lat_dd, breaks = seq(32.4, 35.7,0.1), 
+                        label = seq(32.4, 35.6, 0.1), right = F) %>% as.character() %>% as.numeric())
 
 number_sets_lat_cpue <- total_merge_latitude_cpue %>%
   group_by(data_source, lat_catg) %>%
@@ -481,9 +481,65 @@ lat_cpue <-  merge(number_sets_lat_cpue, number_effort_lat_cpue, by = "unique_id
   mutate(cpue = number_retained/number_efforts) %>%
   filter(!is.na(cpue))
 
+base_theme <- theme(axis.text=element_text(size=6),
+                    axis.text.y = element_text(angle = 90, hjust = 0.5),
+                    axis.title=element_text(size=7),
+                    legend.text=element_text(size=6),
+                    legend.title=element_text(size=7),
+                    plot.tag =element_text(size=8),
+                    plot.title=element_blank(),
+                    # Gridlines
+                    panel.grid.major = element_blank(),
+                    panel.grid.minor = element_blank(),
+                    panel.background = element_blank(),
+                    axis.line = element_line(colour = "black"))
+
 g_cpue_lat <-  ggplot(data = lat_cpue, aes(x=lat_catg, y = cpue, fill = data_source, size = number_sets)) +
   geom_point(pch = 21) +
   #lims(x = c(0, 25), y = c(0, 250)) +
   theme_bw() + base_theme
 
 g_cpue_lat
+
+#########################################
+### Panel B (3) - Julian Day and CPUE ###
+#########################################
+
+number_sets_jd_cpue <- total_merge %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_sets = n_distinct(set_id)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = FALSE)
+
+
+number_effort_jd_cpue <- total_merge %>%
+  filter(!is.na(net_length_fa)) %>%
+  filter(!is.na(soak_hr)) %>%
+  select(set_id, net_length_fa, soak_hr, data_source, julian_day) %>%
+  # turn units from hrs*fa into day*miles
+  mutate(effort = soak_hr*net_length_fa * (1/(880*24))) %>%
+  filter(!duplicated(set_id)) %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_efforts = sum(effort)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = TRUE)
+
+number_retained_jd_cpue <- total_merge %>%
+  # filter out NA n_retained species
+  filter(!is.na(n_retained)) %>%
+  group_by(data_source, julian_day) %>%
+  summarize(number_retained = sum(n_retained)) %>%
+  unite (unique_id, c(data_source, julian_day), sep = "-", remove = TRUE)
+
+jd_cpue <-  merge(number_sets_jd_cpue, number_effort_jd_cpue, by = "unique_id", all.x = TRUE) %>%
+  merge(number_retained_jd_cpue, by = "unique_id", all.x = TRUE) %>%
+  mutate(cpue = number_retained/number_efforts) %>%
+  filter(!is.na(cpue))
+
+g_cpue_jd <-  ggplot(data = jd_cpue, aes(x=julian_day, y = cpue, fill = data_source, size = number_sets)) +
+  geom_point(pch = 21) +
+  lims(y = c(0, 2000)) +
+  theme_bw() + base_theme
+
+g_cpue_jd
+
+
+
