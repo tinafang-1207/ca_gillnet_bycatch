@@ -30,7 +30,11 @@ species_key <- read.csv("data/species_key_final.csv")
 
 #trip data
 trip_2000 <- readRDS("data/confidential/original/SWFSC_1990_2017_set_net_observer_trips.Rds")
+
 trip_1980 <- readRDS("data/confidential/original/CDFW_1983_1989_gillnet_observer_set_info.Rds")
+
+trip_1980_lat_count <- trip_1980 %>%
+  count(lat_dd, long_dd)
 
 # spatial data
 usa <- rnaturalearth::ne_states(country = "United States of America", returnclass = "sf")

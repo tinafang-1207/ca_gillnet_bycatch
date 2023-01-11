@@ -32,10 +32,16 @@ trip_1980_pre_join <- merge(trip_1980, trip_1980_depth_df, by = "set_id") %>%
   select(set_id, bottom_depth_fa, extracted_depth_fa)
 
 ggplot(trip_1980_pre_join, aes(x = bottom_depth_fa, y = extracted_depth_fa)) +
-  geom_hex(bins = 40) +
+  geom_hex(bins = 50) +
   geom_abline(intercept = 1, slope = 1, lty = 2, col = "darkgrey") +
-  scale_fill_viridis_c() +
-  lims(y = c(0, 400), x = c(0, 400)) +
+  scale_fill_viridis_c(trans = "log10") +
+  lims(y = c(0, 100), x = c(0, 100)) +
   labs(x = "reported depth (fa)", y = "extracted depth (fa)") +
   theme_bw()
 
+ggplot(trip_1980_pre_join, aes(x = bottom_depth_fa, y = extracted_depth_fa)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, col = "darkgrey") +
+  lims(y = c(0, 400), x = c(0, 400)) +
+  labs(x = "reported depth (fa)", y = "extracted depth (fa)") +
+  theme_bw()
